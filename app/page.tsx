@@ -22,6 +22,9 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [targetLanguage, setTargetLanguage] = useState<string>(() => {
     if (typeof window !== "undefined") {
+      if (!localStorage.getItem("targetLanguage")) {
+        localStorage.setItem("targetLanguage", "English");
+      }
       return localStorage.getItem("targetLanguage") ?? "English";
     }
     return "English";
@@ -34,6 +37,9 @@ export default function Home() {
   });
   const [prompt, setPrompt] = useState<string>(() => {
     if (typeof window !== "undefined") {
+      if (!localStorage.getItem("prompt")) {
+        localStorage.setItem("prompt", DEFAULT_PROMPT);
+      }
       return localStorage.getItem("prompt") ?? DEFAULT_PROMPT;
     }
     return DEFAULT_PROMPT;

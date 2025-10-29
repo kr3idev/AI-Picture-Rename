@@ -7,9 +7,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Languages } from "@/type/Languages";
+import { SetStateAction } from "react";
 interface TargetLanguageSelectProps {
   targetLanguage: string;
-  setTargetLanguage: (language: string) => void;
+  setTargetLanguage: React.Dispatch<SetStateAction<string>>;
 }
 
 export default function TargetLanguageSelect({
