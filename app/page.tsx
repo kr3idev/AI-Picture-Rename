@@ -1,65 +1,244 @@
-import Image from "next/image";
+"use client";
+
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
+
+import DropZone from "./components/DropZone";
+import { Button } from "@/components/ui/button";
+import React, { useState, useRef, useMemo } from "react";
+import ImageTask from "@/type/ImageTask";
+import toast from "react-hot-toast";
+
+import OpenAI from "openai";
+import ImageTaskTable from "./components/ImageTaskTable";
+import { Label } from "@/components/ui/label";
+import { GithubFavicon } from "./components/GithubFavicon";
+import SettingPanel from "./components/SettingPanel";
+import TargetLanguageSelect from "./components/TargetLanguageSelect";
+import { DEFAULT_PROMPT, PROJECT_URL } from "@/lib/constant";
 
 export default function Home() {
+  const [imageTasks, setImageTasks] = useState<ImageTask[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [targetLanguage, setTargetLanguage] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("targetLanguage") ?? "English";
+    }
+    return "English";
+  });
+  const [openAIApiKey, setOpenAIApiKey] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("openAIApiKey") ?? "";
+    }
+    return "";
+  });
+  const [prompt, setPrompt] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("prompt") ?? DEFAULT_PROMPT;
+    }
+    return DEFAULT_PROMPT;
+  });
+
+  const isGenerating = useMemo(
+    () => imageTasks.some((e) => e.isLoading),
+    [imageTasks],
+  );
+
+  const hasNewNames = useMemo(
+    () => imageTasks.some((e) => e.newName),
+    [imageTasks],
+  );
+  const fileNames = useMemo(
+    () => new Set<string>(imageTasks.map((image) => image.file.name)),
+    [imageTasks],
+  );
+
+  function handleClearTapped() {
+    setImageTasks([]);
+  }
+  function handleGenerateTapped() {
+    imageTasks.forEach((task) => generate(task));
+  }
+  async function generate(task: ImageTask) {
+    const apiKey = localStorage.getItem("openAIApiKey");
+    const prompt = localStorage.getItem("prompt");
+    const targetLanguage = localStorage.getItem("targetLanguage");
+    if (!targetLanguage || targetLanguage.length === 0) {
+      toast.error("Please set target language!");
+      return;
+    }
+    if (!apiKey || apiKey.length === 0) {
+      toast.error("Please set apiKey!");
+      return;
+    }
+    if (!prompt || prompt.length === 0) {
+      toast.error("Please set prompt!");
+      return;
+    }
+
+    const client = new OpenAI({
+      apiKey,
+      dangerouslyAllowBrowser: true,
+    });
+
+    // Convert File to Base64
+    const toBase64 = (file: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+    // Set loading state
+    setImageTasks((prev) =>
+      prev.map((img) =>
+        img.file.name === task.file.name ? { ...img, isLoading: true } : img,
+      ),
+    );
+
+    try {
+      const base64 = await toBase64(task.file);
+      const completion = await client.chat.completions.create({
+        model: "gpt-5-nano",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: prompt.replace("${targetLanguage}", targetLanguage),
+              },
+              {
+                type: "image_url",
+                image_url: { url: base64 },
+              },
+            ],
+          },
+        ],
+      });
+
+      const newName = completion.choices[0]?.message?.content?.trim() || "";
+
+      setImageTasks((prev) =>
+        prev.map((img) =>
+          img.file.name === task.file.name
+            ? { ...img, newName, isLoading: false }
+            : img,
+        ),
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error(`An error occurred during generation: ${err}`);
+      setImageTasks((prev) =>
+        prev.map((img) =>
+          img.file.name === task.file.name ? { ...img, isLoading: false } : img,
+        ),
+      );
+    }
+  }
+  function handleOutput() {
+    if (imageTasks.length === 0) {
+      toast.error("No image");
+      return;
+    }
+
+    const zip = new JSZip();
+    imageTasks.forEach((img) => {
+      const newName = img.newName?.trim() || img.file.name;
+      zip.file(`${newName}${getExtension(img.file.name)}`, img.file);
+    });
+
+    zip.generateAsync({ type: "blob" }).then((blob) => {
+      saveAs(blob, "renamed_imageTasks.zip");
+      toast.success("The ZIP file was output.");
+    });
+  }
+
+  function getExtension(filename: string) {
+    const parts = filename.split(".");
+    return parts.length > 1 ? `.${parts.pop()}` : "";
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files: FileList | null = e.target.files;
+    if (!files || files.length == 0) return;
+
+    toast.success("Import successful!");
+
+    setImageTasks((prev) => [
+      ...prev,
+      ...Array.from(files)
+        .filter(
+          (file) => file.type.startsWith("image/") && !fileNames.has(file.name),
+        )
+        .map((file) => new ImageTask(file)),
+    ]);
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="h-dvh flex flex-col gap-2 p-2">
+      <div className="flex justify-between">
+        {imageTasks.length > 0 ? (
+          <div className="flex gap-2">
+            <Button onClick={handleClearTapped}>Clear</Button>
+            <Button onClick={() => inputRef.current?.click()}>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleInputChange}
+                className="hidden"
+              />
+              Add
+            </Button>
+            <span className="p-2"></span>
+            <Button
+              disabled={isGenerating}
+              variant="outline"
+              onClick={handleGenerateTapped}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              Generate a new name
+            </Button>
+            <Button
+              disabled={isGenerating || !hasNewNames}
+              variant="outline"
+              onClick={handleOutput}
             >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
+              Save
+            </Button>
+          </div>
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-2 items-center">
+          <Label>Target language</Label>
+          <TargetLanguageSelect
+            targetLanguage={targetLanguage}
+            setTargetLanguage={setTargetLanguage}
+          />
+          <SettingPanel
+            openAIApiKey={openAIApiKey}
+            setOpenAIApiKey={setOpenAIApiKey}
+            prompt={prompt}
+            setPrompt={setPrompt}
+          />
+          <a href={PROJECT_URL} target="_blank">
+            <GithubFavicon />
           </a>
         </div>
-      </main>
+      </div>
+      <div className="w-full h-full">
+        {imageTasks.length > 0 ? (
+          <ImageTaskTable
+            imageTasks={imageTasks}
+            setImageTasks={setImageTasks}
+          />
+        ) : (
+          <DropZone setImageTasks={setImageTasks} />
+        )}
+      </div>
     </div>
   );
 }

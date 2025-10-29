@@ -1,0 +1,16 @@
+export const Languages: string[] = [
+  "English",
+  "日本語",
+  "한국어",
+  "繁體中文",
+  "Français",
+  "Deutsch",
+  "Español",
+  "Italiano",
+  "Português",
+  "Русский",
+  "Türkçe",
+  "ไทย",
+  "العربية",
+  "हिन्दी",
+];
